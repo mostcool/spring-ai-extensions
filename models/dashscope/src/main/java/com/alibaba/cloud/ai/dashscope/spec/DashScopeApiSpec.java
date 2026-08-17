@@ -32,32 +32,10 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.model.ModelOptionsUtils;
 /**
- * @author yuluo, yingzi
+ * @author yuluo, yingzi, xuguan
  */
 
 public class DashScopeApiSpec {
-
-    /**
-     * Invocation mode for DashScope Image API.
-     */
-    public enum InvokeMode {
-
-        /**
-         * Auto mode - automatically choose based on model defaults for backward compatibility.
-         */
-        AUTO,
-
-        /**
-         * Synchronous mode - call without async header, blocks until completion.
-         */
-        SYNC,
-
-        /**
-         * Asynchronous mode - call with async header, returns task_id for polling.
-         */
-        ASYNC
-
-    }
 
     public static final String DEFAULT_EMBEDDING_MODEL = DashScopeModel.EmbeddingModel.EMBEDDING_V2.getValue();
 
@@ -372,6 +350,11 @@ public class DashScopeApiSpec {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record AddPipelineDocumentsRequest(@JsonProperty("configured_transformations") List transformations,
+                                              @JsonProperty("data_sources") List<DataSourcesConfig> dataSources) {
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record DataSinksConfig(@JsonProperty("sink_type") String sinkType,
                                   @JsonProperty("component") DataSinksComponent component) {
 
@@ -436,7 +419,6 @@ public class DashScopeApiSpec {
         }
     }
 
-
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record UpsertPipelineResponse(@JsonProperty("id") String id,
                                          @JsonProperty("pipline_name") String pipline_name, @JsonProperty("status") String status,
@@ -459,7 +441,7 @@ public class DashScopeApiSpec {
             @JsonProperty("data_sources") List<DelePipelineDocumentDataSource> dataSources) {
         @JsonInclude(JsonInclude.Include.NON_NULL)
         public record DelePipelineDocumentDataSource(@JsonProperty("source_type") String sourceType,
-                                                     @JsonProperty("component") List<DelePipelineDocumentDataSourceComponent> component) {
+                                                     @JsonProperty("component") DelePipelineDocumentDataSourceComponent component) {
         }
 
         @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -768,6 +750,11 @@ public class DashScopeApiSpec {
             public static final String NONE = "none";
 
             /**
+             * Model must call at least one function, but it can choose which one.
+             */
+            public static final String REQUIRED = "required";
+
+            /**
              * Specifying a particular function forces the model to call that function.
              */
             public static Object function(String functionName) {
@@ -1002,8 +989,8 @@ public class DashScopeApiSpec {
          * When set to {"type": "ephemeral"}, the system will attempt to hit or create a cache.
          */
         @JsonInclude(JsonInclude.Include.NON_NULL)
-        public record MediaContent(@JsonProperty("type") String type, @JsonProperty("text") String text,
-                                   @JsonProperty("image") String image, @JsonProperty("video") List<String> video,
+        public record MediaContent(@JsonIgnore @JsonProperty("type") String type, @JsonProperty("text") String text,
+                                   @JsonProperty("image") String image, @JsonProperty("video") Object video,
                                    @JsonProperty("audio") String audio,
                                    @JsonProperty("cache_control") Map<String, String> cacheControl) {
             /**
@@ -1023,11 +1010,11 @@ public class DashScopeApiSpec {
                 this("text", text, null, null, null, cacheControl);
             }
 
-            public MediaContent(String type, String text, String image, List<String> video) {
+            public MediaContent(String type, String text, String image, Object video) {
                 this(type, text, image, video, null, null);
             }
 
-            public MediaContent(String type, String text, String image, List<String> video, String audio) {
+            public MediaContent(String type, String text, String image, Object video, String audio) {
                 this(type, text, image, video, audio, null);
             }
         }
@@ -1408,150 +1395,6 @@ public class DashScopeApiSpec {
 
         }
     }
-
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record DashScopeImageRequest(@JsonProperty("model") String model,
-                                        @JsonProperty("input") DashScopeImageRequestInput input,
-                                        @JsonProperty("parameters") DashScopeImageRequestParameter parameters
-
-    ) {
-        @JsonInclude(JsonInclude.Include.NON_NULL)
-        public record DashScopeImageRequestInput(@JsonProperty("prompt") String prompt,
-                                                 @JsonProperty("negative_prompt") String negativePrompt, @JsonProperty("ref_img") String refImg,
-                                                 @JsonProperty("function") String function, @JsonProperty("base_image_url") String baseImageUrl,
-                                                 @JsonProperty("mask_image_url") String maskImageUrl,
-                                                 @JsonProperty("sketch_image_url") String sketchImageUrl) {
-        }
-
-        @JsonInclude(JsonInclude.Include.NON_NULL)
-        public record DashScopeImageRequestParameter(@JsonProperty("style") String style,
-                                                     @JsonProperty("size") String size, @JsonProperty("n") Integer n, @JsonProperty("seed") Integer seed,
-                                                     @JsonProperty("ref_strength") Float refStrength, @JsonProperty("ref_mode") String refMode,
-                                                     @JsonProperty("prompt_extend") Boolean promptExtend, @JsonProperty("watermark") Boolean watermark,
-                                                     @JsonProperty("sketch_weight") Integer sketchWeight,
-                                                     @JsonProperty("sketch_extraction") Boolean sketchExtraction,
-                                                     @JsonProperty("sketch_color") Integer[][] sketchColor,
-                                                     @JsonProperty("mask_color") Integer[][] maskColor,
-                                                     @JsonProperty("negative_prompt") String negativePrompt,
-                                                     @JsonProperty("max_images") Integer maxImages,
-                                                     @JsonProperty("enable_interleave") Boolean enableInterleave,
-                                                     @JsonProperty("output_ratio") String outputRatio,
-                                                     @JsonProperty("x_scale") Float xScale,
-                                                     @JsonProperty("y_scale") Float yScale,
-                                                     @JsonProperty("angle") Integer angle,
-                                                     @JsonProperty("left_offset") Integer leftOffset,
-                                                     @JsonProperty("right_offset") Integer rightOffset,
-                                                     @JsonProperty("top_offset") Integer topOffset,
-                                                     @JsonProperty("bottom_offset") Integer bottomOffset,
-                                                     @JsonProperty("best_quality") Boolean bestQuality,
-                                                     @JsonProperty("limit_image_size") Boolean limitImageSize){
-        }
-    }
-
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record DashScopeImageGenerationRequest(@JsonProperty("model") String model,
-                                                  @JsonProperty("input") DashScopeImageGenerationRequestInput input,
-                                                  @JsonProperty("parameters") DashScopeImageGenerationRequestParameter parameters
-
-    ) {
-        @JsonInclude(JsonInclude.Include.NON_NULL)
-        public record DashScopeImageGenerationRequestInput(@JsonProperty("messages")List<DashScopeImageGenerationRequestInputMessage> messages) {
-
-        }
-        @JsonInclude(JsonInclude.Include.NON_NULL)
-        public record DashScopeImageGenerationRequestInputMessage(@JsonProperty("role") String role,
-                                                                  @JsonProperty("content") List<DashScopeImageGenerationRequestInputMessageContent> content){
-        }
-        @JsonInclude(JsonInclude.Include.NON_NULL)
-        public record DashScopeImageGenerationRequestInputMessageContent(@JsonProperty("text") String text,@JsonProperty("image")String image){}
-
-        @JsonInclude(JsonInclude.Include.NON_NULL)
-        public record DashScopeImageGenerationRequestParameter(@JsonProperty("negative_prompt") String negativePrompt,
-                                                               @JsonProperty("size") String size,
-                                                               @JsonProperty("enable_interleave") Boolean enableInterleave,
-                                                               @JsonProperty("n") Integer n,
-                                                               @JsonProperty("max_images") Integer maxImages,
-                                                               @JsonProperty("seed") Integer seed,
-                                                               @JsonProperty("prompt_extend") Boolean promptExtend,
-                                                               @JsonProperty("watermark") Boolean watermark) {}
-    }
-
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record DashScopeOutPaintingRequest(@JsonProperty("model") String model,
-                                              @JsonProperty("input") DashScopeOutPaintingRequestInput input,
-                                              @JsonProperty("parameters") DashScopeOutPaintingRequestParameter parameters
-    ) {
-        @JsonInclude(JsonInclude.Include.NON_NULL)
-        public record DashScopeOutPaintingRequestInput(@JsonProperty("image_url") String imageUrl) {
-        }
-
-        @JsonInclude(JsonInclude.Include.NON_NULL)
-        public record DashScopeOutPaintingRequestParameter(@JsonProperty("output_ratio") String outputRatio,
-                                                           @JsonProperty("x_scale") Float xScale,
-                                                           @JsonProperty("y_scale") Float yScale,
-                                                           @JsonProperty("angle") Integer angle,
-                                                           @JsonProperty("left_offset") Integer leftOffset,
-                                                           @JsonProperty("right_offset") Integer rightOffset,
-                                                           @JsonProperty("top_offset") Integer topOffset,
-                                                           @JsonProperty("bottom_offset") Integer bottomOffset,
-                                                           @JsonProperty("best_quality") Boolean bestQuality,
-                                                           @JsonProperty("limit_image_size") Boolean limitImageSize) {
-        }
-    }
-
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record DashScopeImageAsyncResponse(@JsonProperty("request_id") String requestId,
-                                              @JsonProperty("output") DashScopeImageAsyncResponseOutput output,
-                                              @JsonProperty("usage") DashScopeImageAsyncResponseUsage usage) {
-
-        @JsonInclude(JsonInclude.Include.NON_NULL)
-        public record DashScopeImageAsyncResponseOutput(@JsonProperty("task_id") String taskId,
-                                                        @JsonProperty("task_status") String taskStatus,
-                                                        @JsonProperty("submit_time") String submitTime,
-                                                        @JsonProperty("scheduled_time") String scheduledTime,
-                                                        @JsonProperty("end_time") String endTime,
-                                                        @JsonProperty("results") List<DashScopeImageAsyncResponseResult> results,
-                                                        @JsonProperty("output_image_url") String outputImageUrl,
-                                                        @JsonProperty("choices") List<DashScopeImageAsyncResponseChoice> choices,
-                                                        @JsonProperty("task_metrics") DashScopeImageAsyncResponseTaskMetrics taskMetrics,
-                                                        @JsonProperty("code") String code, @JsonProperty("message") String message) {
-        }
-
-        @JsonInclude(JsonInclude.Include.NON_NULL)
-        public record DashScopeImageAsyncResponseTaskMetrics(@JsonProperty("TOTAL") Integer total,
-                                                             @JsonProperty("SUCCEEDED") Integer SUCCEEDED, @JsonProperty("FAILED") Integer FAILED) {
-        }
-
-        @JsonInclude(JsonInclude.Include.NON_NULL)
-        public record DashScopeImageAsyncResponseUsage(@JsonProperty("image_count") Integer imageCount) {
-        }
-
-        @JsonInclude(JsonInclude.Include.NON_NULL)
-        public record DashScopeImageAsyncResponseResult(@JsonProperty("url") String url) {
-        }
-
-
-        @JsonInclude(JsonInclude.Include.NON_NULL)
-        @JsonIgnoreProperties(ignoreUnknown = true)
-        public record DashScopeImageAsyncResponseChoice(@JsonProperty("finish_reason") String finishReason,
-                                                        @JsonProperty("message") DashScopeImageAsyncResponseMessage message,
-                                                        @JsonProperty("index") Integer index) {
-
-            @JsonInclude(JsonInclude.Include.NON_NULL)
-            @JsonIgnoreProperties(ignoreUnknown = true)
-            public record DashScopeImageAsyncResponseMessage(@JsonProperty("role") String role,
-                                                             @JsonProperty("content") List<DashScopeImageAsyncResponseContent> content) {
-            }
-
-            @JsonInclude(JsonInclude.Include.NON_NULL)
-            @JsonIgnoreProperties(ignoreUnknown = true)
-            public record DashScopeImageAsyncResponseContent(@JsonProperty("type") String type,
-                                                             @JsonProperty("image") String image
-            ) {
-            }
-        }
-    }
-    // format: on
 
 	@JsonInclude(JsonInclude.Include.NON_NULL)
 	public record MultimodalEmbeddingRequest(

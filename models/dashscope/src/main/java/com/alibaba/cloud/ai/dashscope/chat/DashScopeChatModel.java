@@ -60,6 +60,7 @@ import org.springframework.ai.chat.observation.ChatModelObservationConvention;
 import org.springframework.ai.chat.observation.ChatModelObservationDocumentation;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.content.Media;
 import org.springframework.ai.model.ModelOptionsUtils;
 import org.springframework.ai.model.tool.DefaultToolExecutionEligibilityPredicate;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
@@ -88,6 +89,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * {@link ChatModel} implementation for {@literal Alibaba DashScope} backed by
@@ -95,6 +97,7 @@ import java.util.stream.Collectors;
  *
  * @author yuluo
  * @author <a href="mailto:yuluo08290126@gmail.com">yuluo</a>
+ * @author xuguan
  * @see ChatModel
  */
 public class DashScopeChatModel implements ChatModel {
@@ -528,6 +531,12 @@ public class DashScopeChatModel implements ChatModel {
 			}
 			else if (message.getMessageType() == MessageType.ASSISTANT) {
 				var assistantMessage = (AssistantMessage) message;
+				Object content = assistantMessage.getText();
+				Map<String, String> cacheControl = extractCacheControl(message);
+				if (cacheControl != null) {
+					content = List.of(new MediaContent(assistantMessage.getText(), cacheControl));
+				}
+
 				List<ToolCall> toolCalls = null;
 				if (!CollectionUtils.isEmpty(assistantMessage.getToolCalls())) {
 					toolCalls = assistantMessage.getToolCalls().stream().map(toolCall -> {
@@ -548,22 +557,28 @@ public class DashScopeChatModel implements ChatModel {
 					}
 				}
 
-				return List.of(new DashScopeApiSpec.ChatCompletionMessage(assistantMessage.getText(),
+				return List.of(new DashScopeApiSpec.ChatCompletionMessage(content,
 						ChatCompletionMessage.Role.ASSISTANT, null, null, toolCalls, null, partial, null, null, null));
 			}
 			else if (message.getMessageType() == MessageType.TOOL) {
 				ToolResponseMessage toolMessage = (ToolResponseMessage) message;
+				Map<String, String> cacheControl = extractCacheControl(message);
 
 				toolMessage.getResponses().forEach(response -> {
 					Assert.isTrue(response.id() != null, "ToolResponseMessage must have an id");
 					Assert.isTrue(response.name() != null, "ToolResponseMessage must have a name");
 				});
 
-				return toolMessage.getResponses()
-					.stream()
-					.map(tr -> new ChatCompletionMessage(tr.responseData(), ChatCompletionMessage.Role.TOOL, tr.name(),
-							tr.id(), null, null, null, null, null, null))
-					.toList();
+				List<ToolResponseMessage.ToolResponse> responses = toolMessage.getResponses();
+				return IntStream.range(0, responses.size()).mapToObj(i -> {
+					ToolResponseMessage.ToolResponse tr = responses.get(i);
+					Object content = tr.responseData();
+					if (cacheControl != null && i == responses.size() - 1) {
+						content = List.of(new MediaContent(tr.responseData(), cacheControl));
+					}
+					return new ChatCompletionMessage(content, ChatCompletionMessage.Role.TOOL, tr.name(), tr.id(), null,
+							null, null, null, null, null);
+				}).toList();
 			}
 			else {
 				throw new IllegalArgumentException("Unsupported message type: " + message.getMessageType());
@@ -627,47 +642,51 @@ public class DashScopeChatModel implements ChatModel {
 	}
 
 	private List<MediaContent> convertMediaContent(UserMessage message, Map<String, String> cacheControl) {
-		MessageFormat format = MessageFormat.IMAGE;
-		if (message.getMetadata().get(DashScopeApiConstants.MESSAGE_FORMAT) instanceof MessageFormat messageFormat) {
-			format = messageFormat;
-		}
+        Assert.hasText(message.getText(), "User message text must not be empty");
+        List<MediaContent> contentList = new ArrayList<>();
+        MessageFormat format = null;
+        if (message.getMetadata().get(DashScopeApiConstants.MESSAGE_FORMAT) instanceof MessageFormat messageFormat) {
+            format = messageFormat;
+        }
+        if (format == MessageFormat.IMAGE) {
+            contentList.addAll(message.getMedia()
+                    .stream()
+                    .map(media -> new MediaContent("image", null, this.fromMediaData(media.getMimeType(), media.getData()), null))
+                    .toList());
+        }
+        else if (format == MessageFormat.VIDEO) {
+            List<String> imageList = new ArrayList<>();
+            for (Media media : message.getMedia()) {
+                String mimeType = media.getMimeType().toString();
+                // Image list
+                if (mimeType.startsWith("image/")) {
+                    imageList.add(this.fromMediaData(media.getMimeType(), media.getData()));
+                }
+                // Video
+                else {
+                    contentList.add(new MediaContent("video", null, null, this.fromMediaData(media.getMimeType(), media.getData())));
+                }
+            }
+            if (!imageList.isEmpty()) {
+                contentList.add(new MediaContent("video", null, null, imageList));
+            }
+        }
+        else if (format == MessageFormat.AUDIO) {
+            contentList.addAll(message.getMedia()
+                    .stream()
+                    .map(media -> new MediaContent("audio", null, null, null, this.fromMediaData(media.getMimeType(), media.getData())))
+                    .toList());
+        }
+        else {
+            // Default to text
+            contentList.addAll(message.getMedia()
+                    .stream()
+                    .map(media -> new MediaContent(this.fromMediaData(media.getMimeType(), media.getData())))
+                    .toList());
+        }
 
-		List<MediaContent> contentList = new ArrayList<>();
-		if (format == MessageFormat.VIDEO) {
-			List<String> mediaList = message.getMedia()
-				.stream()
-				.map(media -> this.fromMediaData(media.getMimeType(), media.getData()))
-				.toList();
-
-			contentList.add(new MediaContent("video", null, null, mediaList));
-
-			// Apply cache_control to the text content (last content part)
-			MediaContent mediaContent = new MediaContent(message.getText(), cacheControl);
-			contentList.add(mediaContent);
-		}
-		else if (format == MessageFormat.AUDIO) {
-			contentList.addAll(message.getMedia()
-				.stream()
-				.map(media -> new MediaContent("audio", null, null, null,
-						this.fromMediaData(media.getMimeType(), media.getData())))
-				.toList());
-
-			// Apply cache_control to the text content (last content part)
-			MediaContent mediaContent = new MediaContent(message.getText(), cacheControl);
-			contentList.add(mediaContent);
-		}
-		else {
-			contentList.addAll(message.getMedia()
-				.stream()
-				.map(media -> new MediaContent("image", null, this.fromMediaData(media.getMimeType(), media.getData()),
-						null))
-				.toList());
-
-			// Apply cache_control to the text content (last content part)
-			MediaContent mediaContent = new MediaContent(message.getText(), cacheControl);
-			contentList.add(mediaContent);
-		}
-
+		// Apply cache_control to the text content (last content part)
+        contentList.add(new MediaContent(message.getText(), cacheControl));
 		return contentList;
 	}
 
